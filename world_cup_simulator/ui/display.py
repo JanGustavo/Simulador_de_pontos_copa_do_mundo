@@ -1,15 +1,13 @@
 import sys
 
 def show(summary: dict) -> None:
-    # Verifica se o código está executando no contexto do Streamlit
+    # Verifica se o código está executando no contexto do Streamlit usando a API oficial
     is_streamlit = False
-    if "streamlit" in sys.modules:
-        try:
-            from streamlit.runtime.scriptrunner import get_script_run_ctx
-            if get_script_run_ctx() is not None:
-                is_streamlit = True
-        except ImportError:
-            pass
+    try:
+        from streamlit.runtime import exists
+        is_streamlit = exists()
+    except ImportError:
+        pass
 
     if is_streamlit:
         import streamlit as st
