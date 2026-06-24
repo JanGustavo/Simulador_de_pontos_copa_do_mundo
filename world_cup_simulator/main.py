@@ -2,7 +2,6 @@
 
 import sys
 from engine.simulator import run_simulation
-from stats.consolidator import consolidate, consolidate_teams
 from ui.display import show
 
 # Detecta se está sendo executado no contexto do Streamlit usando a API oficial
@@ -59,9 +58,7 @@ if is_streamlit:
             import time
             start = time.perf_counter()
             model = MatchModel(weight_factor=weight_factor)
-            raw_results = run_simulation(iterations=iterations, model=model)
-            summary = consolidate(raw_results)
-            team_summary = consolidate_teams(raw_results)
+            summary, team_summary = run_simulation(iterations=iterations, model=model)
             elapsed = time.perf_counter() - start
             
             st.session_state["simulation_summary"] = summary
@@ -88,9 +85,7 @@ else:
         start = time.perf_counter()
         # No CLI padrão, assumimos modelo ponderado com fator 1.0 (ou 0.0 se quiser simétrico)
         model = MatchModel(weight_factor=1.0)
-        raw_results = run_simulation(iterations=iteracoes, model=model)
-        summary = consolidate(raw_results)
-        team_summary = consolidate_teams(raw_results)
+        summary, team_summary = run_simulation(iterations=iteracoes, model=model)
         elapsed = time.perf_counter() - start
         
         show(summary, team_summary)
