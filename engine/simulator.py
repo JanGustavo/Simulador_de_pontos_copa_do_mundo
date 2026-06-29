@@ -64,13 +64,61 @@ def run_simulation_batch(N: int, model: MatchModel = None) -> tuple[np.ndarray, 
     saldo = gols_marcados.astype(np.int16) - gols_sofridos.astype(np.int16)
     
     # 5. O TRUQUE ARQUITETURAL: Sorting de múltiplos critérios sem loops (Score Combinado)
-    # Codificamos pontos, saldo e gols marcados em um único número inteiro para ordenação estável
-    # pontos max=9 (peso 10k), saldo max/min ajustado com offset (+50 para evitar negativos, peso 100)
-    score = pontos.astype(np.int32) * 10000 + (saldo + 50) * 100 + gols_marcados
-    rankings = np.argsort(-score, axis=2) # Retorna os índices locais ordenados do 1º ao 4º lugar
+    # Confronto Direto (H2H) vetorizado
+    h2h_pts_mat = np.zeros((N, 12, 4, 4), dtype=np.uint8)
+    h2h_gd_mat = np.zeros((N, 12, 4, 4), dtype=np.int16)
+    h2h_gs_mat = np.zeros((N, 12, 4, 4), dtype=np.uint8)
     
+    for i in range(6):
+        h = home_idx_local[i]
+        a = away_idx_local[i]
+        
+        # Time de casa vs Time de fora
+        h2h_pts_mat[:, :, h, a] = pts_home_games[:, :, i]
+        h2h_gd_mat[:, :, h, a] = home_goals[:, :, i].astype(np.int16) - away_goals[:, :, i].astype(np.int16)
+        h2h_gs_mat[:, :, h, a] = home_goals[:, :, i]
+        
+        # Time de fora vs Time de casa
+        h2h_pts_mat[:, :, a, h] = pts_away_games[:, :, i]
+        h2h_gd_mat[:, :, a, h] = away_goals[:, :, i].astype(np.int16) - home_goals[:, :, i].astype(np.int16)
+        h2h_gs_mat[:, :, a, h] = away_goals[:, :, i]
+        
+    # Máscara para identificar times com a mesma pontuação geral no grupo
+    pontos_col = pontos[:, :, :, np.newaxis]
+    pontos_row = pontos[:, :, np.newaxis, :]
+    tied_mask = (pontos_col == pontos_row)
+    
+    # Soma das estatísticas apenas nos confrontos entre os times empatados
+    h2h_pts_tied = np.sum(h2h_pts_mat * tied_mask, axis=3)
+    h2h_gd_tied = np.sum(h2h_gd_mat * tied_mask, axis=3)
+    h2h_gs_tied = np.sum(h2h_gs_mat * tied_mask, axis=3)
+    
+    # Obter os ratings FIFA para o desempate final
+    from models.teams import TEAMS
+    ratings_arr = np.array([TEAMS[t]["rating"] for t in range(48)], dtype=np.int32)
     # Criar mapeamento de IDs globais (0 a 47) tridimensional
     global_ids_3d = np.tile(np.arange(48, dtype=np.uint8).reshape(12, 4), (N, 1, 1))
+    team_ratings = ratings_arr[global_ids_3d]
+    
+    # Codificação dos múltiplos critérios em um único inteiro de 64 bits para ordenação estável
+    # Critérios em ordem de prioridade (decrescente):
+    # 1. Pontos no grupo
+    # 2. Pontos no confronto direto
+    # 3. Saldo de gols no confronto direto
+    # 4. Gols marcados no confronto direto
+    # 5. Saldo de gols geral
+    # 6. Gols marcados geral
+    # 7. Rating FIFA
+    score = (
+        pontos.astype(np.int64) * 10_000_000_000_000 +
+        h2h_pts_tied.astype(np.int64) * 100_000_000_000 +
+        (h2h_gd_tied.astype(np.int64) + 15) * 1_000_000_000 +
+        h2h_gs_tied.astype(np.int64) * 10_000_000 +
+        (saldo.astype(np.int64) + 50) * 100_000 +
+        gols_marcados.astype(np.int64) * 2000 +
+        team_ratings.astype(np.int64)
+    )
+    rankings = np.argsort(-score, axis=2) # Retorna os índices locais ordenados do 1º ao 4º lugar
     
     # Indexação avançada para reordenar todas as matrizes conforme o ranking real
     grid_n, grid_g = np.meshgrid(np.arange(N, dtype=np.int32), np.arange(12, dtype=np.int32), indexing='ij')
@@ -95,8 +143,17 @@ def run_simulation_batch(N: int, model: MatchModel = None) -> tuple[np.ndarray, 
     thirds_saldo = sorted_saldo[:, :, 2]
     thirds_goals = sorted_gols_marcados[:, :, 2]
     
+    # Obter ratings dos terceiros colocados para o desempate final por Ranking FIFA
+    thirds_ratings = ratings_arr[thirds_ids]
+    
     # Aplica o Score Combinado para classificar a tabela dos terceiros
-    thirds_score = thirds_points.astype(np.int32) * 10000 + (thirds_saldo.astype(np.int16) + 50) * 100 + thirds_goals
+    # Prioridades: Pontos ➔ Saldo Geral ➔ Gols Pró ➔ Rating FIFA
+    thirds_score = (
+        thirds_points.astype(np.int64) * 10_000_000 +
+        (thirds_saldo.astype(np.int64) + 50) * 100_000 +
+        thirds_goals.astype(np.int64) * 2000 +
+        thirds_ratings.astype(np.int64)
+    )
     thirds_rankings = np.argsort(-thirds_score, axis=1)
     
     # Extrai os 8 melhores terceiros de cada uma das N iterações de uma vez
