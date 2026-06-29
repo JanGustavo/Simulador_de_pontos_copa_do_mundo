@@ -117,3 +117,68 @@ def show(summary: dict, team_summary: list[dict] = None) -> None:
             print("-" * 38)
             for item in team_summary[:10]:
                 print(f"{item['name']:<18} | {item['rating']:^6} | {item['probability']:>7.2%}")
+
+def show_knockout(results: list[dict]) -> None:
+    """Exibe os resultados da simulação do mata-mata no Streamlit ou CLI."""
+    is_streamlit = False
+    try:
+        from streamlit.runtime import exists
+        is_streamlit = exists()
+    except ImportError:
+        pass
+
+    if is_streamlit:
+        import streamlit as st
+        import pandas as pd
+        
+        st.subheader("🏆 Probabilidade de Avanço no Mata-Mata")
+        st.markdown("Chances estatísticas de cada seleção alcançar cada fase e vencer o torneio:")
+        
+        df = pd.DataFrame(results)
+        # Multiplicar por 100 para exibição em porcentagem
+        df["Oitavas (%)"] = df["oitavas"] * 100
+        df["Quartas (%)"] = df["quartas"] * 100
+        df["Semis (%)"] = df["semis"] * 100
+        df["Final (%)"] = df["final"] * 100
+        df["Campeão (%)"] = df["campeao"] * 100
+        
+        st.dataframe(
+            df[["name", "rating", "Oitavas (%)", "Quartas (%)", "Semis (%)", "Final (%)", "Campeão (%)"]],
+            column_config={
+                "name": "Seleção",
+                "rating": st.column_config.NumberColumn("Rating FIFA", format="%d"),
+                "Oitavas (%)": st.column_config.NumberColumn("Oitavas", format="%.2f%%"),
+                "Quartas (%)": st.column_config.NumberColumn("Quartas", format="%.2f%%"),
+                "Semis (%)": st.column_config.NumberColumn("Semis", format="%.2f%%"),
+                "Final (%)": st.column_config.NumberColumn("Final", format="%.2f%%"),
+                "Campeão (%)": st.column_config.ProgressColumn(
+                    "Campeão",
+                    help="Chance de ganhar a Copa do Mundo",
+                    format="%.2f%%",
+                    min_value=0.0,
+                    max_value=100.0,
+                ),
+            },
+            hide_index=True,
+            use_container_width=True,
+        )
+        
+        st.markdown("### 🥇 Top 10 Seleções com Maior Chance de Título")
+        st.bar_chart(
+            df.head(10),
+            x="name",
+            y="Campeão (%)",
+            color="#d4af37", # Dourado para o campeão
+            use_container_width=True
+        )
+        
+    else:
+        # Saída padrão CLI
+        header = f"{'Seleção':<18} | {'Rating':^6} | {'Oitavas':^8} | {'Quartas':^8} | {'Semis':^8} | {'Final':^8} | {'Campeão':^8}"
+        divider = "-" * len(header)
+        print(header)
+        print(divider)
+        for r in results[:15]:
+            print(f"{r['name']:<18} | {r['rating']:^6} | {r['oitavas']:>7.2%} | {r['quartas']:>7.2%} | {r['semis']:>7.2%} | {r['final']:>7.2%} | {r['campeao']:>7.2%}")
+        if len(results) > 15:
+            print(f"... e mais {len(results) - 15} seleções.")

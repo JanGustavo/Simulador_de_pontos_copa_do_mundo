@@ -2,7 +2,7 @@
 
 import sys
 from engine.simulator import run_simulation
-from ui.display import show
+from ui.display import show, show_knockout
 
 # Detecta se está sendo executado no contexto do Streamlit usando a API oficial
 is_streamlit = False
@@ -15,6 +15,7 @@ except ImportError:
 if is_streamlit:
     import streamlit as st
     from models.match_model import MatchModel
+    from engine.knockout_simulator import run_knockout_simulation
 
     # Configuração de página
     st.set_page_config(page_title="Simulador de Copa do Mundo", page_icon="🏆", layout="centered")
@@ -22,11 +23,18 @@ if is_streamlit:
     st.title("🏆 Simulador da Copa do Mundo (48 Seleções)")
     st.markdown("""
     Este simulador utiliza o método de **Monte Carlo** para simular milhares de torneios da Copa do Mundo.
-    Ele calcula a probabilidade estatística de classificação com base nos pontos conquistados.
+    Ele calcula a probabilidade estatística de classificação ou avanço com base no modo selecionado.
     """)
 
     # Painel de controle lateral
     st.sidebar.header("⚙️ Configurações")
+    
+    simulation_mode = st.sidebar.selectbox(
+        "Modo de Simulação",
+        ["Fase de Grupos", "Mata-Mata (Chaveamento Fixo)"],
+        index=0,
+        help="Escolha entre simular toda a fase de grupos com repescagem ou o mata-mata fixo a partir dos 16vos de final."
+    )
     
     iterations = st.sidebar.number_input(
         "Número de Iterações",
@@ -58,19 +66,29 @@ if is_streamlit:
             import time
             start = time.perf_counter()
             model = MatchModel(weight_factor=weight_factor)
-            summary, team_summary = run_simulation(iterations=iterations, model=model)
-            elapsed = time.perf_counter() - start
             
-            st.session_state["simulation_summary"] = summary
-            st.session_state["simulation_team_summary"] = team_summary
+            if simulation_mode == "Fase de Grupos":
+                summary, team_summary = run_simulation(iterations=iterations, model=model)
+                st.session_state["simulation_mode"] = "Fase de Grupos"
+                st.session_state["simulation_summary"] = summary
+                st.session_state["simulation_team_summary"] = team_summary
+            else:
+                results = run_knockout_simulation(iterations=iterations, model=model)
+                st.session_state["simulation_mode"] = "Mata-Mata"
+                st.session_state["simulation_results"] = results
+                
+            elapsed = time.perf_counter() - start
             st.session_state["simulation_time"] = elapsed
             st.session_state["simulation_iterations"] = iterations
             st.toast("Simulação concluída com sucesso!", icon="✅")
 
     # Exibe os resultados obtidos
-    if "simulation_summary" in st.session_state:
-        st.success(f"⚡ Simulação de {st.session_state['simulation_iterations']:,} copas concluída em **{st.session_state['simulation_time']:.3f} segundos**!")
-        show(st.session_state["simulation_summary"], st.session_state.get("simulation_team_summary"))
+    if "simulation_mode" in st.session_state:
+        st.success(f"⚡ Simulação de {st.session_state['simulation_iterations']:,} torneios concluída em **{st.session_state['simulation_time']:.3f} segundos**!")
+        if st.session_state["simulation_mode"] == "Fase de Grupos":
+            show(st.session_state["simulation_summary"], st.session_state.get("simulation_team_summary"))
+        else:
+            show_knockout(st.session_state["simulation_results"])
     else:
         st.info("👈 Ajuste os parâmetros na barra lateral e clique em **Iniciar Simulação**.")
 
@@ -81,15 +99,25 @@ else:
     def main() -> None:
         import time
         from models.match_model import MatchModel
+        from engine.knockout_simulator import run_knockout_simulation
         
         start = time.perf_counter()
-        # No CLI padrão, assumimos modelo ponderado com fator 1.0 (ou 0.0 se quiser simétrico)
         model = MatchModel(weight_factor=1.0)
-        summary, team_summary = run_simulation(iterations=iteracoes, model=model)
-        elapsed = time.perf_counter() - start
         
+        print("="*70)
+        print("🏆 SIMULADOR DA FASE DE GRUPOS (10.000 iterações)")
+        print("="*70)
+        summary, team_summary = run_simulation(iterations=iteracoes, model=model)
         show(summary, team_summary)
-        print(f"\n⚡ Simulação de {iteracoes:,} copas concluída em {elapsed:.3f} segundos!")
+        
+        print("\n" + "="*70)
+        print("🏆 SIMULADOR DO MATA-MATA - CHAVEAMENTO FIXO (10.000 iterações)")
+        print("="*70)
+        knockout_results = run_knockout_simulation(iterations=iteracoes, model=model)
+        show_knockout(knockout_results)
+        
+        elapsed = time.perf_counter() - start
+        print(f"\n⚡ Simulação completa de {iteracoes:,} torneios concluída em {elapsed:.3f} segundos!")
 
     if __name__ == "__main__":
         main()  
